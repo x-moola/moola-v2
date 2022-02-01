@@ -135,9 +135,9 @@ const buidlerConfig: HardhatUserConfig = {
       url: 'http://localhost:8545',
     },
     ganache: {
-      url: 'HTTP://127.0.0.1:7545',
+      url: 'HTTP://127.0.0.1:8545',
       accounts: {
-        mnemonic: 'horse today punch dwarf outdoor element forget index dry zebra turkey note',
+        mnemonic: 'fox sight canyon orphan hotel grow hedgehog build bless august weather swarm',
         path: "m/44'/60'/0'/0",
         initialIndex: 0,
         count: 20,

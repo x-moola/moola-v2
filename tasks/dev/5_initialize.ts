@@ -93,7 +93,9 @@ task('dev:initialize-lending-pool', 'Initialize lending pool configuration.')
 
     const lendingPoolAddress = await addressesProvider.getLendingPool();
 
-    const gateWay = '0x2680429f0ce00b5917e323d7e7b88f4f21bf4aa6';
+    const Weth = await getWethAddress(poolConfig);
+    const wethGateWay = await deployWETHGateway([Weth], verify);
+    const gateWay = wethGateWay.address;
 
     await authorizeWETHGateway(gateWay, lendingPoolAddress);
   });
