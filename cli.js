@@ -10,165 +10,37 @@ const MToken = require('./abi/MToken.json');
 const MoolaMigratorV1V2 = require('./abi/MoolaMigratorV1V2.json');
 const DebtToken = require('./abi/DebtToken.json');
 const RepayDelegationHelper = require('./abi/RepayDelegationHelper.json');
-const BigNumber = require('bignumber.js');
 const Promise = require('bluebird');
 const ethers = require('ethers');
 let pk;
 
-const DEBT_TOKENS = {
-  1: 'stableDebtTokenAddress',
-  2: 'variableDebtTokenAddress',
-};
+const {
+  ETHER,
+  MAX_UINT256,
+  ALLOWANCE_THRESHOLD,
+  DEFAULT_GAS,
+  ALFAJORES_TOKEN_ADDRESSES,
+  ALFAJORES_CONTRACT_ADDRESSES,
+  CELO_TOKEN_ADDRESSES,
+  CELO_CONTRACT_ADDRESSES,
+  DEBT_TOKENS,
+  ZERO_HASH,
+} = require('./cli/cli-constants');
 
-const ether = '1000000000000000000';
-const ray = '1000000000000000000000000000';
-const maxUint256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-const ALLOWANCE_THRESHOLD = BN('1e+30');
-const DEFAULT_GAS = 2000000;
-
-function BN(num) {
-  return new BigNumber(num);
-}
-
-function print(num) {
-  return BN(num).dividedBy(ether).toFixed();
-}
-
-function printRay(num) {
-  return BN(num).dividedBy(ray).toFixed();
-}
-
-function printRayRate(num) {
-  return BN(num).dividedBy(ray).multipliedBy(BN(100)).toFixed(2) + '%';
-}
-
-function nowSeconds() {
-  return Math.floor(Date.now() / 1000);
-}
-
-function buildLiquiditySwapParams(
-  assetToSwapToList,
-  minAmountsToReceive,
-  swapAllBalances,
-  permitAmounts,
-  deadlines,
-  v,
-  r,
-  s,
-  useEthPath,
-  useATokenAsFrom,
-  useATokenAsTo
-) {
-  return ethers.utils.defaultAbiCoder.encode(
-    [
-      'address[]',
-      'uint256[]',
-      'bool[]',
-      'uint256[]',
-      'uint256[]',
-      'uint8[]',
-      'bytes32[]',
-      'bytes32[]',
-      'bool[]',
-      'bool[]',
-      'bool[]',
-    ],
-    [
-      assetToSwapToList,
-      minAmountsToReceive,
-      swapAllBalances,
-      permitAmounts,
-      deadlines,
-      v,
-      r,
-      s,
-      useEthPath,
-      useATokenAsFrom,
-      useATokenAsTo,
-    ]
-  );
-}
-
-function buildSwapAndRepayParams(
-  collateralAsset,
-  collateralAmount,
-  rateMode,
-  permitAmount,
-  deadline,
-  v,
-  r,
-  s,
-  useEthPath,
-  useATokenAsFrom,
-  useATokenAsTo
-) {
-  return ethers.utils.defaultAbiCoder.encode(
-    [
-      'address',
-      'uint256',
-      'uint256',
-      'uint256',
-      'uint256',
-      'uint8',
-      'bytes32',
-      'bytes32',
-      'bool',
-      'bool',
-      'bool',
-    ],
-    [
-      collateralAsset,
-      collateralAmount,
-      rateMode,
-      permitAmount,
-      deadline,
-      v,
-      r,
-      s,
-      useEthPath,
-      useATokenAsFrom,
-      useATokenAsTo,
-    ]
-  );
-}
-
-const INTEREST_RATE = {
-  NONE: 0,
-  STABLE: 1,
-  VARIABLE: 2,
-  1: 'STABLE',
-  2: 'VARIABLE',
-  0: 'NONE',
-};
-
-function isValidRateMode(rateMode) {
-  if (!rateMode || !INTEREST_RATE[rateMode.toUpperCase()]) {
-    console.error('rateMode can be only "stable|variable"');
-    return false;
-  }
-
-  return true;
-}
-
-function getRateModeNumber(rateMode) {
-  return INTEREST_RATE[rateMode.toUpperCase()];
-}
-
-function isNumeric(num) {
-  if (isNaN(num)) {
-    console.error(`invalid number ${num}`);
-    return false;
-  }
-  return true;
-}
-
-function isValidBoolean(boolStr) {
-  if (boolStr !== 'true' && boolStr !== 'false') {
-    console.error('boolean values can be only true|false');
-    return false;
-  }
-  return true;
-}
+const {
+  BN,
+  print,
+  printRay,
+  printRayRate,
+  nowSeconds,
+  buildLiquiditySwapParams,
+  buildSwapAndRepayParams,
+  isValidRateMode,
+  getRateModeNumber,
+  isNumeric,
+  isValidBoolean,
+  retry,
+} = require('./cli/cli-helpers');
 
 function printActions() {
   console.info('Available assets: celo|cusd|ceur|creal|moo');
@@ -202,16 +74,6 @@ function printActions() {
   console.info('repayDelegation delegator asset amount stable|variable address [privateKey]');
 }
 
-const retry = async (fun, tries = 5) => {
-  try {
-    return await fun();
-  } catch (err) {
-    if (tries == 0) throw err;
-    await Promise.delay(1000);
-    return retry(fun, tries - 1);
-  }
-};
-
 async function execute(network, action, ...params) {
   if (network === undefined) {
     console.info('Usage: test|main|URL action params');
@@ -238,65 +100,57 @@ async function execute(network, action, ...params) {
       kit = newKit('https://alfajores-forno.celo-testnet.org');
       addressProvider = new kit.web3.eth.Contract(
         LendingPoolAddressesProvider,
-        '0xb3072f5F0d5e8B9036aEC29F37baB70E86EA0018'
+        ALFAJORES_CONTRACT_ADDRESSES.addressProvider
       );
-      cEUR = new kit.web3.eth.Contract(MToken, '0x10c892a6ec43a53e45d0b916b4b7d383b1b78c0f');
-      cUSD = new kit.web3.eth.Contract(MToken, '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1');
-      cREAL = new kit.web3.eth.Contract(MToken, '0xE4D517785D091D3c54818832dB6094bcc2744545');
-      MOO = new kit.web3.eth.Contract(MToken, '0x17700282592D6917F6A73D0bF8AcCf4D578c131e');
-      CELO = new kit.web3.eth.Contract(MToken, '0xF194afDf50B03e69Bd7D057c1Aa9e10c9954E4C9');
+      cEUR = new kit.web3.eth.Contract(MToken, ALFAJORES_TOKEN_ADDRESSES.cEUR);
+      cUSD = new kit.web3.eth.Contract(MToken, ALFAJORES_TOKEN_ADDRESSES.cUSD);
+      cREAL = new kit.web3.eth.Contract(MToken, ALFAJORES_TOKEN_ADDRESSES.cREAL);
+      MOO = new kit.web3.eth.Contract(MToken, ALFAJORES_TOKEN_ADDRESSES.MOO);
+      CELO = new kit.web3.eth.Contract(MToken, ALFAJORES_TOKEN_ADDRESSES.CELO);
       dataProvider = new kit.web3.eth.Contract(
         DataProvider,
-        '0x31ccB9dC068058672D96E92BAf96B1607855822E'
+        ALFAJORES_CONTRACT_ADDRESSES.dataProvider
       );
       migrator = new kit.web3.eth.Contract(
         MoolaMigratorV1V2,
-        '0x78660A4bbe5108c8258c39696209329B3bC214ba'
+        ALFAJORES_CONTRACT_ADDRESSES.migrator
       );
-      liquiditySwapAdapter = '0xe469484419AD6730BeD187c22a47ca38B054B09f';
+      liquiditySwapAdapter = ALFAJORES_CONTRACT_ADDRESSES.liquiditySwapAdapter;
       repayAdapter = new kit.web3.eth.Contract(
         UniswapRepayAdapter,
-        '0x55a48631e4ED42D2b12FBA0edc7ad8F66c28375C'
+        ALFAJORES_CONTRACT_ADDRESSES.repayAdapter
       );
-      autoRepay = new kit.web3.eth.Contract(
-        AutoRepay,
-        '0x19F8322CaC86623432e9142a349504DE6754f12A'
-      );
-      ubeswap = new kit.web3.eth.Contract(Uniswap, '0xe3d8bd6aed4f159bc8000a9cd47cffdb95f96121');
+      autoRepay = new kit.web3.eth.Contract(AutoRepay, ALFAJORES_CONTRACT_ADDRESSES.autoRepay);
+      ubeswap = new kit.web3.eth.Contract(Uniswap, ALFAJORES_CONTRACT_ADDRESSES.ubeswap);
       repayDelegationHelper = new kit.web3.eth.Contract(
         RepayDelegationHelper,
-        '0x954234d95900AD58fAB116EcF6a454b4C3255913'
+        ALFAJORES_CONTRACT_ADDRESSES.repayDelegationHelper
       );
       break;
     case 'main':
       kit = newKit('https://forno.celo.org');
       addressProvider = new kit.web3.eth.Contract(
         LendingPoolAddressesProvider,
-        '0xD1088091A174d33412a968Fa34Cb67131188B332'
+        CELO_CONTRACT_ADDRESSES.addressProvider
       );
-      cEUR = new kit.web3.eth.Contract(MToken, '0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6cA73');
-      cUSD = new kit.web3.eth.Contract(MToken, '0x765DE816845861e75A25fCA122bb6898B8B1282a');
-      cREAL = new kit.web3.eth.Contract(MToken, '0xe8537a3d056DA446677B9E9d6c5dB704EaAb4787');
-      MOO = new kit.web3.eth.Contract(MToken, '0x17700282592D6917F6A73D0bF8AcCf4D578c131e');
-      CELO = new kit.web3.eth.Contract(MToken, '0x471EcE3750Da237f93B8E339c536989b8978a438');
-      dataProvider = new kit.web3.eth.Contract(
-        DataProvider,
-        '0x43d067ed784D9DD2ffEda73775e2CC4c560103A1'
-      );
-      migrator = new kit.web3.eth.Contract(
-        MoolaMigratorV1V2,
-        '0xB87ebF9CD90003B66CF77c937eb5628124fA0662'
-      );
-      liquiditySwapAdapter = '0x574f683a3983AF2C386cc073E93efAE7fE2B9eb3';
+      cEUR = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.cEUR);
+      cUSD = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.cUSD);
+      cREAL = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.cREAL);
+      MOO = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.MOO);
+      CELO = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.CELO);
+      dataProvider = new kit.web3.eth.Contract(DataProvider, CELO_CONTRACT_ADDRESSES.dataProvider);
+      migrator = new kit.web3.eth.Contract(MoolaMigratorV1V2, CELO_CONTRACT_ADDRESSES.migrator);
+      liquiditySwapAdapter = CELO_CONTRACT_ADDRESSES.liquiditySwapAdapter;
       repayAdapter = new kit.web3.eth.Contract(
         UniswapRepayAdapter,
-        '0x18A7119360d078c5B55d8a8288bFcc43EbfeF57c'
+        CELO_CONTRACT_ADDRESSES.repayAdapter
       );
-      autoRepay = new kit.web3.eth.Contract(
-        AutoRepay,
-        '0xCC321F48CF7bFeFe100D1Ce13585dcfF7627f754'
+      autoRepay = new kit.web3.eth.Contract(AutoRepay, CELO_CONTRACT_ADDRESSES.autoRepay);
+      ubeswap = new kit.web3.eth.Contract(Uniswap, CELO_CONTRACT_ADDRESSES.ubeswap);
+      repayDelegationHelper = new kit.web3.eth.Contract(
+        RepayDelegationHelper,
+        CELO_CONTRACT_ADDRESSES.repayDelegationHelper
       );
-      ubeswap = new kit.web3.eth.Contract(Uniswap, '0xe3d8bd6aed4f159bc8000a9cd47cffdb95f96121');
       break;
     default:
       try {
@@ -308,32 +162,22 @@ async function execute(network, action, ...params) {
       }
       addressProvider = new kit.web3.eth.Contract(
         LendingPoolAddressesProvider,
-        '0xD1088091A174d33412a968Fa34Cb67131188B332'
+        CELO_CONTRACT_ADDRESSES.addressProvider
       );
-      cEUR = new kit.web3.eth.Contract(MToken, '0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6cA73');
-      cUSD = new kit.web3.eth.Contract(MToken, '0x765DE816845861e75A25fCA122bb6898B8B1282a');
-      cREAL = new kit.web3.eth.Contract(MToken, '0xe8537a3d056DA446677B9E9d6c5dB704EaAb4787');
-      MOO = new kit.web3.eth.Contract(MToken, '0x17700282592D6917F6A73D0bF8AcCf4D578c131e');
-      CELO = new kit.web3.eth.Contract(MToken, '0x471EcE3750Da237f93B8E339c536989b8978a438');
-      dataProvider = new kit.web3.eth.Contract(
-        DataProvider,
-        '0x43d067ed784D9DD2ffEda73775e2CC4c560103A1'
-      );
-      migrator = new kit.web3.eth.Contract(
-        MoolaMigratorV1V2,
-        '0xB87ebF9CD90003B66CF77c937eb5628124fA0662'
-      );
-      privateKeyRequired = false;
-      liquiditySwapAdapter = '0x574f683a3983AF2C386cc073E93efAE7fE2B9eb3';
+      cEUR = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.cEUR);
+      cUSD = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.cUSD);
+      cREAL = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.cREAL);
+      MOO = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.MOO);
+      CELO = new kit.web3.eth.Contract(MToken, CELO_TOKEN_ADDRESSES.CELO);
+      dataProvider = new kit.web3.eth.Contract(DataProvider, CELO_CONTRACT_ADDRESSES.dataProvider);
+      migrator = new kit.web3.eth.Contract(MoolaMigratorV1V2, CELO_CONTRACT_ADDRESSES.migrator);
+      liquiditySwapAdapter = CELO_CONTRACT_ADDRESSES.liquiditySwapAdapter;
       repayAdapter = new kit.web3.eth.Contract(
         UniswapRepayAdapter,
-        '0x18A7119360d078c5B55d8a8288bFcc43EbfeF57c'
+        CELO_CONTRACT_ADDRESSES.repayAdapter
       );
-      autoRepay = new kit.web3.eth.Contract(
-        AutoRepay,
-        '0xCC321F48CF7bFeFe100D1Ce13585dcfF7627f754'
-      );
-      ubeswap = new kit.web3.eth.Contract(Uniswap, '0xe3d8bd6aed4f159bc8000a9cd47cffdb95f96121');
+      autoRepay = new kit.web3.eth.Contract(AutoRepay, CELO_CONTRACT_ADDRESSES.autoRepay);
+      ubeswap = new kit.web3.eth.Contract(Uniswap, CELO_CONTRACT_ADDRESSES.ubeswap);
   }
   const web3 = kit.web3;
   const eth = web3.eth;
@@ -377,7 +221,7 @@ async function execute(network, action, ...params) {
     const user = params[1];
     console.info(
       BN((await token.methods.balanceOf(user).call()).toString())
-        .div(ether)
+        .div(ETHER)
         .toFixed()
     );
     return;
@@ -546,7 +390,7 @@ async function execute(network, action, ...params) {
     const reserve = reserves[params[0]];
     const token = tokens[params[0]];
     const user = params[1];
-    const amount = params[2] === 'all' ? maxUint256 : web3.utils.toWei(params[2]);
+    const amount = params[2] === 'all' ? MAX_UINT256 : web3.utils.toWei(params[2]);
     const rate = getRateModeNumber(params[3]);
     if (privateKeyRequired) {
       pk = params[4];
@@ -604,7 +448,7 @@ async function execute(network, action, ...params) {
   if (action === 'redeem') {
     const reserve = reserves[params[0]];
     const user = params[1];
-    const amount = params[2] === 'all' ? maxUint256 : web3.utils.toWei(params[2]);
+    const amount = params[2] === 'all' ? MAX_UINT256 : web3.utils.toWei(params[2]);
     if (privateKeyRequired) {
       pk = params[3];
       if (!pk) {
@@ -777,7 +621,7 @@ async function execute(network, action, ...params) {
       'Delegate migrator CUSD',
       (
         await debtTokenMCUSD.methods
-          .approveDelegation(migrator.options.address, maxUint256)
+          .approveDelegation(migrator.options.address, MAX_UINT256)
           .send({ from: user, gas: DEFAULT_GAS })
       ).transactionHash
     );
@@ -785,7 +629,7 @@ async function execute(network, action, ...params) {
       'Delegate migrator CEUR',
       (
         await debtTokenMCEUR.methods
-          .approveDelegation(migrator.options.address, maxUint256)
+          .approveDelegation(migrator.options.address, MAX_UINT256)
           .send({ from: user, gas: DEFAULT_GAS })
       ).transactionHash
     );
@@ -793,7 +637,7 @@ async function execute(network, action, ...params) {
       'Delegate migrator CELO',
       (
         await debtTokenMCELO.methods
-          .approveDelegation(migrator.options.address, maxUint256)
+          .approveDelegation(migrator.options.address, MAX_UINT256)
           .send({ from: user, gas: DEFAULT_GAS })
       ).transactionHash
     );
@@ -867,7 +711,7 @@ async function execute(network, action, ...params) {
           'Approve Moola',
           (
             await tokens[token].methods
-              .approve(lendingPool.options.address, maxUint256)
+              .approve(lendingPool.options.address, MAX_UINT256)
               .send({ from: user, gas: DEFAULT_GAS })
           ).transactionHash
         );
@@ -881,7 +725,7 @@ async function execute(network, action, ...params) {
           'Approve Uniswap',
           (
             await tokens[token].methods
-              .approve(uniswap.options.address, maxUint256)
+              .approve(uniswap.options.address, MAX_UINT256)
               .send({ from: user, gas: DEFAULT_GAS })
           ).transactionHash
         );
@@ -944,7 +788,7 @@ async function execute(network, action, ...params) {
 
         // should probably limit the amount of users we run on here (could be a LONG list)
         const risky = usersData
-          .filter(([address, data]) => BN(data.healthFactor).dividedBy(ether).lt(BN(1)))
+          .filter(([address, data]) => BN(data.healthFactor).dividedBy(ETHER).lt(BN(1)))
           .map((el) => el[0]);
 
         console.log(`found ${risky.length} users to run`);
@@ -958,12 +802,12 @@ async function execute(network, action, ...params) {
           const rates = {};
           await Promise.map(tokenNames, async (token) => {
             if (token === 'celo') {
-              rates['celo'] = BN(ether);
+              rates['celo'] = BN(ETHER);
             } else {
               rates[token] = BN(
                 (
                   await uniswap.methods
-                    .getAmountsOut(ether, [
+                    .getAmountsOut(ETHER, [
                       CELO.options.address,
                       wrappedEth,
                       tokens[token].options.address,
@@ -996,12 +840,12 @@ async function execute(network, action, ...params) {
             BN(data2.currentStableDebt)
               .plus(data2.currentVariableDebt)
               .multipliedBy(rates[res2])
-              .dividedBy(ether)
+              .dividedBy(ETHER)
               .comparedTo(
                 BN(data1.currentStableDebt)
                   .plus(data1.currentVariableDebt)
                   .multipliedBy(rates[res1])
-                  .dividedBy(ether)
+                  .dividedBy(ETHER)
               )
           )[0];
           const biggestCollateral = positions
@@ -1009,9 +853,9 @@ async function execute(network, action, ...params) {
             .sort(([res1, data1], [res2, data2]) =>
               BN(data2.currentATokenBalance)
                 .multipliedBy(rates[res2])
-                .dividedBy(ether)
+                .dividedBy(ETHER)
                 .comparedTo(
-                  BN(data1.currentATokenBalance).multipliedBy(rates[res1]).dividedBy(ether)
+                  BN(data1.currentATokenBalance).multipliedBy(rates[res1]).dividedBy(ETHER)
                 )
             )[0];
 
@@ -1190,7 +1034,7 @@ async function execute(network, action, ...params) {
         'Approve UniswapAdapter',
         (
           await mToken.methods
-            .approve(liquiditySwapAdapter, maxUint256)
+            .approve(liquiditySwapAdapter, MAX_UINT256)
             .send({ from: user, gas: DEFAULT_GAS })
         ).transactionHash
       );
@@ -1203,8 +1047,8 @@ async function execute(network, action, ...params) {
       [0],
       [0],
       [0],
-      ['0x0000000000000000000000000000000000000000000000000000000000000000'],
-      ['0x0000000000000000000000000000000000000000000000000000000000000000'],
+      [ZERO_HASH],
+      [ZERO_HASH],
       [false],
       [useATokenAsFrom],
       [useATokenAsTo]
@@ -1278,8 +1122,6 @@ async function execute(network, action, ...params) {
     const useATokenAsFrom = params[1] != 'celo';
     const useATokenAsTo = params[2] != 'celo';
 
-    const zeroHash = '0x0000000000000000000000000000000000000000000000000000000000000000';
-
     const reserveCollateralToken = await dataProvider.methods
       .getReserveTokensAddresses(collateralAsset.options.address)
       .call();
@@ -1331,8 +1173,8 @@ async function execute(network, action, ...params) {
         0,
         0,
         0,
-        zeroHash,
-        zeroHash,
+        ZERO_HASH,
+        ZERO_HASH,
         false,
         useATokenAsFrom,
         useATokenAsTo
@@ -1353,7 +1195,7 @@ async function execute(network, action, ...params) {
         maxCollateralAmount,
         repayAmount,
         rateMode,
-        { amount: 0, deadline: 0, v: 0, r: zeroHash, s: zeroHash },
+        { amount: 0, deadline: 0, v: 0, r: ZERO_HASH, s: ZERO_HASH },
         false,
         useATokenAsFrom,
         useATokenAsTo
@@ -1550,7 +1392,7 @@ async function execute(network, action, ...params) {
         'Approve Moola',
         (
           await debtAsset.methods
-            .approve(lendingPool.options.address, maxUint256)
+            .approve(lendingPool.options.address, MAX_UINT256)
             .send({ from: user, gas: DEFAULT_GAS })
         ).transactionHash
       );
