@@ -86,6 +86,7 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
    * The user should give this contract allowance to pull the ATokens in order to withdraw the underlying asset
    * @param collateralAsset Address of asset to be swapped
    * @param debtAsset Address of debt asset
+   * @param path Path for swapping collateralAsset into debtAsset
    * @param collateralAmount Amount of the collateral to be swapped
    * @param debtRepayAmount Amount of the debt to be repaid
    * @param debtRateMode Rate mode of the debt to be repaid
@@ -223,6 +224,7 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
    *
    * @param collateralAsset Address of token to be swapped
    * @param debtAsset Address of debt token to be received from the swap
+   * @param path Path for swapping collateralAsset into debtAsset
    * @param amount Amount of the debt to be repaid
    * @param collateralAmount Amount of the reserve to be swapped
    * @param rateMode Rate mode of the debt to be repaid
