@@ -61,9 +61,10 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
 
     RepayParams memory decodedParams = _decodeParams(params);
 
-    _swapAndRepay(
+    _swapAndRepayWithPath(
       decodedParams.collateralAsset,
       assets[0],
+      decodedParams.path,
       amounts[0],
       decodedParams.collateralAmount,
       decodedParams.rateMode,
@@ -92,9 +93,10 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
    * @param useATokenAsFrom use corresponding aToken instead of collateralAsset in swap
    * @param useATokenAsTo use corresponding aToken instead of debtAsset in swap
    */
-  function swapAndRepay(
+  function swapAndRepayWithPath(
     address collateralAsset,
     address debtAsset,
+    address[] path,
     uint256 collateralAmount,
     uint256 debtRepayAmount,
     uint256 debtRateMode,
@@ -119,9 +121,10 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
       maxCollateralToSwap = maxCollateralToSwap.mul(amountToRepay).div(debtRepayAmount);
     }
 
-    _doSwapAndPull(
+    _doSwapAndPullWithPath(
       collateralAsset,
       debtAsset,
+      path,
       msg.sender,
       0,
       permitSignature,
@@ -143,6 +146,7 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
    *
    * @param collateralAsset Address of token to be swapped
    * @param debtAsset Address of debt token to be received from the swap
+   * @param path Path for swapping collateralAsset into debtAsset
    * @param user Address of the user
    * @param premium Fee of the flash loan
    * @param permitSignature struct containing the permit signature
@@ -152,9 +156,10 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
    * @param amountToRepay amount that transferred in repay
    * @param maxCollateralToSwap maximum amount of collateral to swap
    */
-  function _doSwapAndPull(
+  function _doSwapAndPullWithPath(
     address collateralAsset,
     address debtAsset,
+    address[] path,
     address user,
     uint256 premium,
     PermitSignature memory permitSignature,
@@ -185,15 +190,12 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
         _pullAToken(collateralAsset, collateralATokenAddress, user, amounts0, permitSignature);
       }
 
-      // Swap collateral asset to the debt asset
-      _swapTokensForExactTokens(
+      _swapTokensForExactTokensWithPath(
         collateralAsset,
         debtAsset,
-        useATokenAsFrom ? collateralATokenAddress : collateralAsset,
-        useATokenAsTo ? _getReserveData(debtAsset).aTokenAddress : debtAsset,
+        path,
         amounts0,
-        amountToRepay.add(premium),
-        useEthPath
+        amountToRepay.add(premium)
       );
 
       if (useATokenAsTo) {
@@ -231,9 +233,10 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
    * @param useATokenAsFrom use corresponding aToken instead of collateralAsset in swap
    * @param useATokenAsTo use corresponding aToken instead of debtAsset in swap
    */
-  function _swapAndRepay(
+  function _swapAndRepayWithPath(
     address collateralAsset,
     address debtAsset,
+    address[] path,
     uint256 amount,
     uint256 collateralAmount,
     uint256 rateMode,
@@ -256,9 +259,10 @@ contract UniswapRepayAdapter is BaseUniswapAdapter {
       maxCollateralToSwap = maxCollateralToSwap.mul(repaidAmount).div(amount);
     }
 
-    _doSwapAndPull(
+    _doSwapAndPullWithPath(
       collateralAsset,
       debtAsset,
+      path,
       initiator,
       premium,
       permitSignature,
