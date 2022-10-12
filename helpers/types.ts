@@ -13,6 +13,7 @@ export enum eEthereumNetwork {
   main = 'main',
   coverage = 'coverage',
   hardhat = 'hardhat',
+  ganache = 'ganache',
   tenderlyMain = 'tenderlyMain',
 }
 
@@ -443,6 +444,7 @@ export interface iEthereumParamsPerNetwork<T> {
   [eEthereumNetwork.ropsten]: T;
   [eEthereumNetwork.main]: T;
   [eEthereumNetwork.hardhat]: T;
+  [eEthereumNetwork.ganache]: T;
   [eEthereumNetwork.tenderlyMain]: T;
 }
 

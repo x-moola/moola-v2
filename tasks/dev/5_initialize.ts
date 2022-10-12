@@ -82,16 +82,20 @@ task('dev:initialize-lending-pool', 'Initialize lending pool configuration.')
       addressesProvider.address,
       verify
     );
+
     await insertContractAddressInDb(
       eContractid.MockFlashLoanReceiver,
       mockFlashLoanReceiver.address
     );
-
     await deployWalletBalancerProvider(verify);
 
     await insertContractAddressInDb(eContractid.AaveProtocolDataProvider, testHelpers.address);
 
     const lendingPoolAddress = await addressesProvider.getLendingPool();
-    const gateWay = await getParamPerNetwork(WethGateway, network);
+
+    const Weth = await getWethAddress(poolConfig);
+    const wethGateWay = await deployWETHGateway([Weth], verify);
+    const gateWay = wethGateWay.address;
+
     await authorizeWETHGateway(gateWay, lendingPoolAddress);
   });
